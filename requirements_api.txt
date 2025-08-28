@@ -1,0 +1,30 @@
+# requirements_api.txt - Dependencies for API-based Blueverse Foundry app
+# Minimal requirements for the API-based application
+
+# Core web framework
+streamlit>=1.28.0
+
+# HTTP requests
+requests>=2.31.0
+
+# Data processing and visualization
+pandas>=2.0.0
+plotly>=5.15.0
+
+# Environment and configuration
+python-dotenv>=1.0.0
+
+# Voice input functionality
+streamlit-mic-recorder>=0.0.5
+
+# Text-to-speech functionality
+pyttsx3>=2.90
+
+# Optional: If you need additional data processing
+numpy>=1.24.0
+
+# Optional: For enhanced logging
+colorlog>=6.7.0
+
+# JSON processing (built-in, but explicit for clarity)
+# json - Built into Python standard library
