@@ -1,6 +1,6 @@
 # Auto-generated Dashboard Page
-# Created: 2025-08-27 18:24:35
-# Dashboard ID: dash_20250827_182435
+# Created: 2025-08-29 15:04:11
+# Dashboard ID: dash_20250829_150411
 
 import streamlit as st
 import plotly.graph_objects as go
@@ -20,26 +20,20 @@ st.set_page_config(
 # Dashboard configuration
 DASHBOARD_CONFIG = {
     "title": "Live Dashboard",
-    "dashboard_id": "dash_20250827_182435",
-    "created": "2025-08-27T18:24:35.649769",
+    "dashboard_id": "dash_20250829_150411",
+    "created": "2025-08-29T15:04:11.962403",
     "charts": [
     {
         "type": "bar",
-        "title": "Bar Chart: Top 10 Customers By Spend",
-        "description": "top 10 customers by spend",
-        "query": "Create a bar chart for top 10 customers by spend"
-    },
-    {
-        "type": "line",
-        "title": "Line Chart: Top 10 Customers By Spend",
-        "description": "top 10 customers by spend",
-        "query": "Create a line chart for top 10 customers by spend"
+        "title": "Bar Chart: Top 5 Customers",
+        "description": "top 5 customers",
+        "query": "Create a bar chart for top 5 customers"
     },
     {
         "type": "pie",
-        "title": "Pie Chart: Product Categories",
-        "description": "product categories",
-        "query": "Create a pie chart for product categories"
+        "title": "Pie Chart: The Categories Of Products",
+        "description": "the categories of products",
+        "query": "Create a pie chart for the categories of products"
     }
 ]
 }

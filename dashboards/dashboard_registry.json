@@ -1,1 +1,24 @@
-[]
+[
+  {
+    "title": "Live Dashboard",
+    "dashboard_id": "dash_20250829_150411",
+    "page_path": "pages\\dashboard_live_dashboard_20250829_150411.py",
+    "page_name": "dashboard_live_dashboard_20250829_150411",
+    "created": "2025-08-29T15:04:11.970869",
+    "charts": [
+      {
+        "type": "bar",
+        "title": "Bar Chart: Top 5 Customers",
+        "description": "top 5 customers",
+        "query": "Create a bar chart for top 5 customers"
+      },
+      {
+        "type": "pie",
+        "title": "Pie Chart: The Categories Of Products",
+        "description": "the categories of products",
+        "query": "Create a pie chart for the categories of products"
+      }
+    ],
+    "url": "http://localhost:8501/dashboard_live_dashboard_20250829_150411"
+  }
+]

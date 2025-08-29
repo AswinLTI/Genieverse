@@ -91,7 +91,7 @@ class ResponseProcessor:
             charts = data.get("charts", [])
             
             file_name = os.path.basename(dashboard_path) if dashboard_path else "dashboard.py"
-            dashboard_url = f"http://localhost:8501/dashboards/{file_name}"
+            dashboard_url = self._get_deployment_url(f"dashboards/{file_name}")
             
             return f"""✅ **Live dashboard with the requested charts has been created**
 
@@ -252,3 +252,29 @@ To view: Copy the link above and run the dashboard file using:
             error_details["error_type"] = "data_error"
         
         return error_details
+    
+    def _get_deployment_url(self, page_path: str) -> str:
+        """
+        Generate deployment-ready URL for dashboard pages.
+        
+        Args:
+            page_path: Path to the page
+            
+        Returns:
+            str: Deployment-ready URL
+        """
+        try:
+            # Import here to avoid circular imports
+            from config import get_deployment_base_url
+            
+            base_url = get_deployment_base_url()
+            
+            if base_url:
+                return f"{base_url}/{page_path}"
+            else:
+                # For Streamlit Cloud, use relative URLs
+                return f"/{page_path}"
+            
+        except Exception:
+            # Fallback to relative URL for deployment compatibility
+            return f"/{page_path}"

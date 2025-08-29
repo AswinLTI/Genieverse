@@ -414,7 +414,7 @@ class UIComponents:
             **Dashboard Management (Streamlit Pages System):**
             - Each dashboard is created as a Streamlit page in the `pages/` folder
             - Dashboards automatically appear in your Streamlit app sidebar
-            - Access dashboards directly via URLs like `http://localhost:8501/DashboardName`
+            - Access dashboards directly via URLs
             - Pages are self-contained with API client and chart rendering
             
             **File Structure:**
@@ -423,7 +423,7 @@ class UIComponents:
             
             **Features:**
             - Native Streamlit pages (auto-navigation)
-            - Direct URL access (`localhost:8501/PageName`)
+            - Direct URL access 
             - Built-in API client and chart rendering
             - Dark theme optimized
             - Auto-refresh capabilities
@@ -436,5 +436,5 @@ class UIComponents:
             
             st.markdown("**Navigation Methods:**")
             st.markdown("1. **Sidebar:** Streamlit auto-detects pages in the `pages/` folder")
-            st.markdown("2. **Direct URL:** `http://localhost:8501/DashboardName`")
+            st.markdown("2. **Direct URL:** Access via the deployed app URL")
             st.markdown("3. **Registry:** Click dashboard URLs from this page")

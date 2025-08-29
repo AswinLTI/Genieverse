@@ -79,7 +79,9 @@ DASHBOARD_CONFIG = {
     "max_charts_per_row": 2,
     "default_chart_height": 400,
     "auto_refresh_interval": 300,  # 5 minutes in seconds
-    "max_data_points": 1000
+    "max_data_points": 1000,
+    "deployment_mode": "auto",  # "auto", "local", or "cloud"
+    "base_url": None  # Will be auto-detected if None
 }
 
 # Logging Configuration
@@ -96,6 +98,31 @@ def get_api_token() -> str:
 def get_base_url() -> str:
     """Get the base URL for the current environment."""
     return API_CONFIG["base_url"]
+
+def get_deployment_base_url() -> str:
+    """Get the deployment base URL for the current environment."""
+    deployment_mode = DASHBOARD_CONFIG.get("deployment_mode", "auto")
+    base_url = DASHBOARD_CONFIG.get("base_url")
+    
+    if base_url:
+        return base_url
+    
+    if deployment_mode == "local":
+        return "http://localhost:8501"
+    elif deployment_mode == "cloud":
+        # For Streamlit Cloud, use relative URLs (no base URL needed)
+        return ""
+    else:  # auto
+        # Auto-detect based on environment
+        try:
+            import streamlit as st
+            # Check if running in Streamlit Cloud by looking for environment variables
+            if os.getenv("STREAMLIT_CLOUD") or os.getenv("STREAMLIT_SHARING"):
+                return ""  # Use relative URLs for Streamlit Cloud
+            else:
+                return "http://localhost:8501"
+        except:
+            return "http://localhost:8501"
 
 def validate_config() -> bool:
     """Validate that all required configuration is present."""

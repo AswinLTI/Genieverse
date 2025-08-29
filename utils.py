@@ -8,7 +8,35 @@ import os
 import json
 import datetime
 import re
+import streamlit as st
 from typing import Dict, Any, Optional, List
+
+
+def get_deployment_url(page_name: str) -> str:
+    """
+    Generate deployment-ready URL for dashboard pages.
+    
+    Args:
+        page_name: Name of the page without .py extension
+        
+    Returns:
+        str: Deployment-ready URL
+    """
+    try:
+        # Import here to avoid circular imports
+        from config import get_deployment_base_url
+        
+        base_url = get_deployment_base_url()
+        
+        if base_url:
+            return f"{base_url}/{page_name}"
+        else:
+            # For Streamlit Cloud, use relative URLs
+            return f"/{page_name}"
+        
+    except Exception:
+        # Fallback to relative URL for deployment compatibility
+        return f"/{page_name}"
 
 def create_streamlit_page(page_name: str, content: str) -> str:
     """
@@ -389,7 +417,7 @@ def add_to_dashboard_registry(dashboard_config: Dict[str, Any], page_path: str, 
             "page_name": os.path.basename(page_path).replace('.py', ''),
             "created": datetime.datetime.now().isoformat(),
             "charts": dashboard_config["charts"],
-            "url": f"http://localhost:8501/{os.path.basename(page_path).replace('.py', '')}"
+            "url": get_deployment_url(os.path.basename(page_path).replace('.py', ''))
         }
         
         registry.append(dashboard_entry)

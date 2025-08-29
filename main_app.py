@@ -8,6 +8,7 @@ import logging
 import os
 import json
 import plotly.graph_objects as go
+from datetime import datetime
 from typing import Optional
 
 # Import custom modules
@@ -17,6 +18,7 @@ from dashboard_manager import DashboardManager
 from ui_components import UIComponents
 from chart_utils import ChartBuilder
 from response_processor import ResponseProcessor
+from stock_analyzer import StockAnalyzer
 
 # Voice input imports
 from streamlit_mic_recorder import mic_recorder, speech_to_text
@@ -35,6 +37,53 @@ logger = logging.getLogger(LOGGING_CONFIG["logger_name"])
 
 # Set page configuration
 st.set_page_config(page_title="Genieverse", layout="wide")
+
+# Hide unwanted sidebar elements with custom CSS
+st.markdown("""
+<style>
+    /* Hide Streamlit's default navigation/file browser */
+    .css-1d391kg {display: none !important;}
+    .css-1rs6os {display: none !important;}
+    .css-17eq0hr {display: none !important;}
+    .css-hby737 {display: none !important;}
+    
+    /* Hide the top part of sidebar before our navigation */
+    section[data-testid="stSidebar"] > div:first-child > div:first-child {
+        padding-top: 0.5rem;
+    }
+    
+    /* Hide any default Streamlit sidebar navigation */
+    section[data-testid="stSidebar"] .css-1544g2n .css-1d391kg {
+        display: none !important;
+    }
+    
+    /* Hide file browser or page navigation that might appear */
+    section[data-testid="stSidebar"] .stMarkdown:first-child {
+        display: none !important;
+    }
+    
+    /* Specific targeting for navigation links that might appear above our Navigation section */
+    section[data-testid="stSidebar"] a[href*="main_app"],
+    section[data-testid="stSidebar"] a[href*="scatter"],
+    section[data-testid="stSidebar"] a[href*="candlestick"],
+    section[data-testid="stSidebar"] .element-container:has(a[href*="main_app"]),
+    section[data-testid="stSidebar"] .element-container:has(a[href*="scatter"]),
+    section[data-testid="stSidebar"] .element-container:has(a[href*="candlestick"]) {
+        display: none !important;
+    }
+    
+    /* Hide elements until we reach the Navigation header */
+    section[data-testid="stSidebar"] .element-container:nth-child(-n+3) {
+        display: none !important;
+    }
+    
+    /* Make sure our Navigation section is visible */
+    section[data-testid="stSidebar"] .element-container:has(h2),
+    section[data-testid="stSidebar"] .element-container:has(.stSelectbox) {
+        display: block !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Add header with Genie image and title
 col1, col2 = st.columns([1, 5])
@@ -90,13 +139,62 @@ def initialize_session_state():
 
 
 def ask_api(query: str) -> str:
-    """Send query to API and process response with routing"""
+    """Send query to API and process response with routing and stock analysis"""
     logger.debug(f"Processing query: {query}")
     
     if not st.session_state["api_client"]:
         return "❌ API client not configured. Please set your BLUEVERSE_API_TOKEN in .env file or use the sidebar."
     
+    # First, check if this is a stock analysis request
+    stock_analyzer = StockAnalyzer()
+    analysis_config = stock_analyzer.detect_analysis_request(query)
+    
+    if analysis_config and analysis_config.get('is_analysis_request'):
+        logger.info(f"Stock analysis request detected: {analysis_config}")
+        
+        # Generate the analysis and create charts as JSON figures for persistence
+        try:
+            stock_symbol = analysis_config['stock_symbol']
+            time_period = analysis_config['time_period']
+            
+            stock_data = stock_analyzer.generate_analysis_data(stock_symbol, time_period)
+            
+            # Create all charts as JSON figures
+            candlestick_fig = stock_analyzer._create_candlestick_chart(stock_data, stock_symbol)
+            price_fig = stock_analyzer._create_price_chart(stock_data, stock_symbol)
+            tech_fig = stock_analyzer._create_technical_chart(stock_data, stock_symbol)
+            volume_fig = stock_analyzer._create_volume_chart(stock_data, stock_symbol)
+            returns_fig = stock_analyzer._create_returns_chart(stock_data, stock_symbol)
+            
+            # Calculate performance metrics for display
+            perf_metrics = stock_analyzer._calculate_performance_metrics(stock_data)
+            insights = stock_analyzer._generate_insights(stock_data, perf_metrics, stock_symbol)
+            
+            # Store multiple charts in session state for proper rendering
+            st.session_state["multiple_charts"] = [
+                candlestick_fig, price_fig, tech_fig, volume_fig, returns_fig
+            ]
+            
+            # Store additional stock analysis data for display
+            st.session_state["stock_analysis_data"] = {
+                'symbol': stock_symbol,
+                'time_period': time_period,
+                'data_source': 'API' if hasattr(stock_data, 'attrs') and stock_data.attrs.get('api_fetched') else 'Sample',
+                'performance_metrics': perf_metrics,
+                'insights': insights
+            }
+            
+            # Simple response text - all interactive components will be displayed in the chart section
+            data_source_text = "📡 Live Data from API" if hasattr(stock_data, 'attrs') and stock_data.attrs.get('api_fetched') else "🔬 Sample Data"
+            
+            return f"📊 **{stock_symbol} Stock Analysis ({time_period})** complete!\n\n{data_source_text} • Interactive charts and metrics displayed below"
+            
+        except Exception as e:
+            logger.error(f"Error in stock analysis: {e}")
+            return f"❌ Error creating stock analysis: {str(e)}"
+    
     try:
+        # Regular API processing for non-analysis requests
         # Send query to API (routing is handled internally)
         result = st.session_state["api_client"].send_query(query)
         
@@ -228,65 +326,62 @@ def ask_api(query: str) -> str:
 
 
 def extract_chart_data(api_response):
-    """Extract chart data from API response - keeping original logic"""
+    """Extract chart data from API response - enhanced with bulletproof truncation handling"""
     try:
         chart_data = {}
         
-        # Try to extract chart data from various response formats
+        # Use the robust parser for ALL responses to handle truncation automatically
+        logger.info("Using robust JSON parser with automatic truncation handling")
+        
+        from robust_json_parser import RobustJSONParser
+        parser = RobustJSONParser()
+        
+        # Handle different response formats
+        response_text = ""
+        
         if isinstance(api_response, dict):
             # Handle JSON Generator response format
             if "status" in api_response and api_response.get("status") == "success":
                 if "data" in api_response and api_response["data"]:
                     chart_data["json_generator_data"] = api_response
+                    logger.info("Direct JSON response with valid data")
                     return chart_data
             
             # Try to find embedded JSON in string fields
             for field in ["response", "message", "content", "data", "result"]:
                 if field in api_response and isinstance(api_response[field], str):
-                    try:
-                        parsed_json = json.loads(api_response[field])
-                        if isinstance(parsed_json, dict):
-                            # Handle dashboard response with multiple charts
-                            if "charts" in parsed_json and isinstance(parsed_json["charts"], list):
-                                # Return the first chart for now (we can enhance this later)
-                                if parsed_json["charts"]:
-                                    first_chart = parsed_json["charts"][0]
-                                    first_chart["status"] = "success"  # Add status for compatibility
-                                    chart_data["json_generator_data"] = first_chart
-                                    chart_data["multiple_charts"] = parsed_json["charts"]  # Store all charts
-                                    return chart_data
-                            
-                            # Handle single chart response
-                            elif "status" in parsed_json and parsed_json.get("status") == "success":
-                                if "data" in parsed_json:
-                                    chart_data["json_generator_data"] = parsed_json
-                                    return chart_data
-                    except json.JSONDecodeError:
-                        continue
+                    response_text = api_response[field]
+                    break
                 elif field in api_response and isinstance(api_response[field], dict):
                     # Check nested structure
                     nested = api_response[field]
                     for nested_field in ["response", "message", "content", "data", "result"]:
                         if nested_field in nested and isinstance(nested[nested_field], str):
-                            try:
-                                parsed_json = json.loads(nested[nested_field])
-                                if isinstance(parsed_json, dict):
-                                    # Handle dashboard response with multiple charts
-                                    if "charts" in parsed_json and isinstance(parsed_json["charts"], list):
-                                        if parsed_json["charts"]:
-                                            first_chart = parsed_json["charts"][0]
-                                            first_chart["status"] = "success"
-                                            chart_data["json_generator_data"] = first_chart
-                                            chart_data["multiple_charts"] = parsed_json["charts"]
-                                            return chart_data
-                                    
-                                    # Handle single chart response
-                                    elif "status" in parsed_json and parsed_json.get("status") == "success":
-                                        if "data" in parsed_json:
-                                            chart_data["json_generator_data"] = parsed_json
-                                            return chart_data
-                            except json.JSONDecodeError:
-                                continue
+                            response_text = nested[nested_field]
+                            break
+                    if response_text:
+                        break
+        
+        # If it's a string response directly
+        elif isinstance(api_response, str):
+            response_text = api_response
+        
+        # Parse using robust parser with automatic truncation handling
+        if response_text:
+            parsed_data = parser.parse_response(response_text)
+            
+            if parsed_data:
+                # Check if this is an error response
+                if parsed_data.get('status') == 'error':
+                    st.error(f"❌ {parsed_data.get('error', 'Unknown error occurred')}")
+                    return None
+                
+                chart_data["json_generator_data"] = parsed_data
+                logger.info(f"Successfully parsed data with {parsed_data.get('data_count', 0)} complete records")
+                logger.info(f"Truncation handling: {parsed_data.get('parser_info', {}).get('features', [])}")
+                return chart_data
+            else:
+                logger.warning("Robust parser could not extract valid data from response")
         
         return None
         
@@ -307,7 +402,9 @@ def extract_context_from_query(query: str, chart_type: str, chart_info: dict) ->
     
     # Try to extract company name
     company = ""
-    if "tcs" in query_lower:
+    if "wipro" in query_lower:
+        company = "Wipro"
+    elif "tcs" in query_lower:
         company = "TCS"
     elif "stock" in query_lower or "share" in query_lower:
         # Look for company name before "stock" or "share"
@@ -1106,10 +1203,12 @@ current_page = display_sidebar()
 
 # Page routing - exactly like api_app.py
 if current_page == "💬 Chat with Genie":
-    st.markdown("<h2>💬 Chat with the Genie</h2>", unsafe_allow_html=True)
-    st.markdown("Ask me anything about your data! I can help you analyze, visualize, and understand your database.")
+    #st.markdown("<h2>💬 Chat with the Genie</h2>", unsafe_allow_html=True)
+    #st.markdown("Ask me anything about your data! I can help you analyze, visualize, and understand your database.")
+    with st.chat_message("assistant", avatar="static/genie.png"):
+        st.write("Hi, I am your Data Genie. Ask me anything about your data! I can help you analyze, visualize, and understand your data. 🔥 away with your question!")
     
-    # Chat history display - exactly like api_app.py
+    # Chat history display - enhanced for stock analysis
     if st.session_state["history"]:
         for i, (role, msg, chart) in enumerate(st.session_state["history"]):
             avatar = "static/genie.png" if role == "assistant" else None
@@ -1123,8 +1222,64 @@ if current_page == "💬 Chat with Genie":
                             st.session_state.last_response_text = msg
                             speak_text(msg, auto_speak=True)
                             st.rerun()
+                
+                # Handle different chart types
                 if chart:
-                    st.plotly_chart(chart, use_container_width=True)
+                    # Check if this is a stock analysis entry
+                    if isinstance(chart, dict) and chart.get("type") == "stock_analysis":
+                        # Recreate stock analysis tabs from stored data
+                        stock_data = chart["data"]
+                        multiple_charts = chart["charts"]
+                        
+                        st.markdown(f"### 📊 {stock_data['symbol']} Stock Analysis ({stock_data['time_period']})")
+                        
+                        # Data source indicator
+                        if stock_data['data_source'] == 'API':
+                            st.success("📡 **Live Data**: Fetched from database via API")
+                        else:
+                            st.info("🔬 **Sample Data**: Using representative data for demonstration")
+                        
+                        # Create tabs for organized display
+                        tab1, tab2, tab3, tab4 = st.tabs(["📈 Price Trends", "📊 Technical Analysis", "💹 Performance", "🔍 Insights"])
+                        
+                        with tab1:
+                            # Candlestick and price charts
+                            if len(multiple_charts) >= 2:
+                                st.plotly_chart(multiple_charts[0], use_container_width=True, key=f"hist_candlestick_{i}")
+                                st.plotly_chart(multiple_charts[1], use_container_width=True, key=f"hist_price_{i}")
+                        
+                        with tab2:
+                            # Technical and volume charts
+                            if len(multiple_charts) >= 4:
+                                st.plotly_chart(multiple_charts[2], use_container_width=True, key=f"hist_technical_{i}")
+                                st.plotly_chart(multiple_charts[3], use_container_width=True, key=f"hist_volume_{i}")
+                        
+                        with tab3:
+                            # Performance metrics and returns chart
+                            perf_metrics = stock_data['performance_metrics']
+                            
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("Total Return", f"{perf_metrics.get('total_return', 0):.2f}%")
+                            with col2:
+                                st.metric("Volatility", f"{perf_metrics.get('volatility', 0):.2f}%")
+                            with col3:
+                                st.metric("Max Drawdown", f"{perf_metrics.get('max_drawdown', 0):.2f}%")
+                            with col4:
+                                st.metric("Sharpe Ratio", f"{perf_metrics.get('sharpe_ratio', 0):.2f}")
+                            
+                            # Returns chart
+                            if len(multiple_charts) >= 5:
+                                st.plotly_chart(multiple_charts[4], use_container_width=True, key=f"hist_returns_{i}")
+                        
+                        with tab4:
+                            # Insights
+                            insights = stock_data['insights']
+                            for j, insight in enumerate(insights):
+                                st.info(insight)
+                    else:
+                        # Regular single chart display
+                        st.plotly_chart(chart, use_container_width=True)
     
     # Voice input section - top recorder (only before first query)
     if not st.session_state["history"] or not st.session_state.last_query_completed:
@@ -1191,46 +1346,112 @@ if current_page == "💬 Chat with Genie":
             multiple_charts = st.session_state.get("multiple_charts", None)
             
             if multiple_charts and len(multiple_charts) > 1:
-                # Display multiple charts in a dashboard layout
-                st.markdown("### 📊 Dashboard Charts")
+                # Check if this is stock analysis data
+                stock_analysis_data = st.session_state.get("stock_analysis_data", None)
                 
-                if len(multiple_charts) == 2:
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.plotly_chart(multiple_charts[0], use_container_width=True)
-                    with col2:
-                        st.plotly_chart(multiple_charts[1], use_container_width=True)
+                if stock_analysis_data:
+                    # Display stock analysis in organized tabs
+                    st.markdown(f"### 📊 {stock_analysis_data['symbol']} Stock Analysis ({stock_analysis_data['time_period']})")
+                    
+                    # Data source indicator
+                    if stock_analysis_data['data_source'] == 'API':
+                        st.success("📡 **Live Data**: Fetched from database via API")
+                    else:
+                        st.info("🔬 **Sample Data**: Using representative data for demonstration")
+                    
+                    # Create tabs for organized display
+                    tab1, tab2, tab3, tab4 = st.tabs(["📈 Price Trends", "📊 Technical Analysis", "💹 Performance", "🔍 Insights"])
+                    
+                    with tab1:
+                        # Candlestick and price charts
+                        if len(multiple_charts) >= 2:
+                            st.plotly_chart(multiple_charts[0], use_container_width=True, key="candlestick")
+                            st.plotly_chart(multiple_charts[1], use_container_width=True, key="price")
+                    
+                    with tab2:
+                        # Technical and volume charts
+                        if len(multiple_charts) >= 4:
+                            st.plotly_chart(multiple_charts[2], use_container_width=True, key="technical")
+                            st.plotly_chart(multiple_charts[3], use_container_width=True, key="volume")
+                    
+                    with tab3:
+                        # Performance metrics and returns chart
+                        perf_metrics = stock_analysis_data['performance_metrics']
+                        
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Total Return", f"{perf_metrics.get('total_return', 0):.2f}%")
+                        with col2:
+                            st.metric("Volatility", f"{perf_metrics.get('volatility', 0):.2f}%")
+                        with col3:
+                            st.metric("Max Drawdown", f"{perf_metrics.get('max_drawdown', 0):.2f}%")
+                        with col4:
+                            st.metric("Sharpe Ratio", f"{perf_metrics.get('sharpe_ratio', 0):.2f}")
+                        
+                        # Returns chart
+                        if len(multiple_charts) >= 5:
+                            st.plotly_chart(multiple_charts[4], use_container_width=True, key="returns")
+                    
+                    with tab4:
+                        # Insights
+                        insights = stock_analysis_data['insights']
+                        for insight in insights:
+                            st.info(insight)
                 else:
-                    # For more than 2 charts, display in rows
-                    for i in range(0, len(multiple_charts), 2):
-                        if i + 1 < len(multiple_charts):
-                            col1, col2 = st.columns(2)
-                            with col1:
+                    # Regular multiple charts display for non-stock analysis
+                    st.markdown("### 📊 Dashboard Charts")
+                    
+                    if len(multiple_charts) == 2:
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.plotly_chart(multiple_charts[0], use_container_width=True)
+                        with col2:
+                            st.plotly_chart(multiple_charts[1], use_container_width=True)
+                    else:
+                        # For more than 2 charts, display in rows
+                        for i in range(0, len(multiple_charts), 2):
+                            if i + 1 < len(multiple_charts):
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.plotly_chart(multiple_charts[i], use_container_width=True)
+                                with col2:
+                                    st.plotly_chart(multiple_charts[i + 1], use_container_width=True)
+                            else:
                                 st.plotly_chart(multiple_charts[i], use_container_width=True)
-                            with col2:
-                                st.plotly_chart(multiple_charts[i + 1], use_container_width=True)
-                        else:
-                            st.plotly_chart(multiple_charts[i], use_container_width=True)
             elif chart:
                 # Display single chart
                 st.plotly_chart(chart, use_container_width=True)
         
-        # Add to history - exactly like api_app.py format (preserve chart for history)
+        # Add to history - handle stock analysis specially
         chart_for_history = st.session_state.get("chart", None)
         multiple_charts_for_history = st.session_state.get("multiple_charts", None)
+        stock_analysis_for_history = st.session_state.get("stock_analysis_data", None)
         
-        # For multiple charts, use the first one for history compatibility
-        if multiple_charts_for_history and len(multiple_charts_for_history) > 0:
-            chart_for_history = multiple_charts_for_history[0]
-        
-        st.session_state["history"].append(("user", user_input, None))
-        st.session_state["history"].append(("assistant", response, chart_for_history))
+        # For stock analysis, store complete data for recreation
+        if stock_analysis_for_history and multiple_charts_for_history:
+            # Store as special stock analysis entry
+            stock_analysis_entry = {
+                "type": "stock_analysis",
+                "data": stock_analysis_for_history,
+                "charts": multiple_charts_for_history
+            }
+            st.session_state["history"].append(("user", user_input, None))
+            st.session_state["history"].append(("assistant", response, stock_analysis_entry))
+        else:
+            # Regular chart handling
+            if multiple_charts_for_history and len(multiple_charts_for_history) > 0:
+                chart_for_history = multiple_charts_for_history[0]
+            
+            st.session_state["history"].append(("user", user_input, None))
+            st.session_state["history"].append(("assistant", response, chart_for_history))
         
         # Clear chart data from session state after adding to history
         if "chart" in st.session_state:
             del st.session_state["chart"]
         if "multiple_charts" in st.session_state:
             del st.session_state["multiple_charts"]
+        if "stock_analysis_data" in st.session_state:
+            del st.session_state["stock_analysis_data"]
         
         # Clear chat input by rerunning
         st.rerun()
